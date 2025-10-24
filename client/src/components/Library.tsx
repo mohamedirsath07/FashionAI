@@ -1,0 +1,233 @@
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Library as LibraryIcon, Trash2, Upload, AlertCircle, Check, X } from "lucide-react";
+import { getLibraryImages, deleteImageFromFirebase, isFirebaseConfigured } from "@/lib/firebase";
+import type { ClothingItem } from "@shared/schema";
+
+interface LibraryProps {
+  onSelectImages: (items: ClothingItem[]) => void;
+  onClose: () => void;
+}
+
+export function Library({ onSelectImages, onClose }: LibraryProps) {
+  const [libraryImages, setLibraryImages] = useState<Array<{url: string, name: string, path: string}>>([]);
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isConfigured, setIsConfigured] = useState(false);
+
+  useEffect(() => {
+    loadLibraryImages();
+    setIsConfigured(isFirebaseConfigured());
+  }, []);
+
+  const loadLibraryImages = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const images = await getLibraryImages();
+      setLibraryImages(images);
+    } catch (err) {
+      setError('Failed to load library. Please check your Firebase configuration.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleToggleSelect = (imageUrl: string) => {
+    const newSelected = new Set(selectedImages);
+    if (newSelected.has(imageUrl)) {
+      newSelected.delete(imageUrl);
+    } else {
+      newSelected.add(imageUrl);
+    }
+    setSelectedImages(newSelected);
+  };
+
+  const handleDeleteImage = async (imagePath: string) => {
+    try {
+      await deleteImageFromFirebase(imagePath);
+      setLibraryImages(libraryImages.filter(img => img.path !== imagePath));
+    } catch (err) {
+      alert('Failed to delete image. Please try again.');
+      console.error(err);
+    }
+  };
+
+  const handleUseSelected = () => {
+    const selectedItems: ClothingItem[] = Array.from(selectedImages).map((url, index) => {
+      const image = libraryImages.find(img => img.url === url);
+      return {
+        id: `library-${Date.now()}-${index}`,
+        imageUrl: url,
+        type: 'other',
+        detectedType: 'other'
+      };
+    });
+    
+    onSelectImages(selectedItems);
+    onClose();
+  };
+
+  if (!isConfigured) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <Card className="max-w-2xl w-full p-6 max-h-[90vh] overflow-auto">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <LibraryIcon className="h-6 w-6" />
+              Image Library - Setup Required
+            </h2>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+
+          <Alert className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Firebase Configuration Required</strong>
+              <br />
+              <br />
+              To use the Image Library feature, you need to configure Firebase Storage:
+              <br />
+              <br />
+              <ol className="list-decimal ml-5 space-y-2">
+                <li>Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Firebase Console</a></li>
+                <li>Create a new project or select an existing one</li>
+                <li>Enable Storage in the Build menu</li>
+                <li>Go to Project Settings → General → Your apps</li>
+                <li>Copy your Firebase configuration</li>
+                <li>Update the values in <code className="bg-gray-100 px-1 rounded">client/src/lib/firebase.ts</code></li>
+              </ol>
+              <br />
+              Replace the placeholder values with your actual Firebase credentials:
+              <pre className="bg-gray-900 text-gray-100 p-3 rounded mt-2 text-xs overflow-auto">
+{`apiKey: "YOUR_API_KEY",
+authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+projectId: "YOUR_PROJECT_ID",
+storageBucket: "YOUR_PROJECT_ID.appspot.com",
+messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+appId: "YOUR_APP_ID"`}
+              </pre>
+            </AlertDescription>
+          </Alert>
+
+          <Button onClick={onClose} className="w-full">
+            Close
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="max-w-6xl w-full p-6 max-h-[90vh] overflow-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <LibraryIcon className="h-6 w-6" />
+            My Clothing Library
+          </h2>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {isLoading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading your library...</p>
+          </div>
+        ) : libraryImages.length === 0 ? (
+          <div className="text-center py-12">
+            <LibraryIcon className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-xl font-semibold mb-2">Your library is empty</h3>
+            <p className="text-muted-foreground mb-4">
+              Upload images with the "Save to Library" option to build your collection
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {libraryImages.length} items in library • {selectedImages.size} selected
+              </p>
+              {selectedImages.size > 0 && (
+                <Button onClick={handleUseSelected} className="gap-2">
+                  <Check className="h-4 w-4" />
+                  Use {selectedImages.size} Selected
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {libraryImages.map((image) => (
+                <div
+                  key={image.path}
+                  className={`relative group rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                    selectedImages.has(image.url)
+                      ? 'border-primary ring-2 ring-primary'
+                      : 'border-transparent hover:border-gray-300'
+                  }`}
+                  onClick={() => handleToggleSelect(image.url)}
+                >
+                  <img
+                    src={image.url}
+                    alt={image.name}
+                    className="w-full h-48 object-cover"
+                  />
+                  
+                  {selectedImages.has(image.url) && (
+                    <div className="absolute top-2 right-2 bg-primary text-white rounded-full p-1">
+                      <Check className="h-4 w-4" />
+                    </div>
+                  )}
+
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteImage(image.path);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="mt-6 flex gap-2">
+          <Button variant="outline" onClick={onClose} className="flex-1">
+            Cancel
+          </Button>
+          {selectedImages.size > 0 && (
+            <Button onClick={handleUseSelected} className="flex-1 gap-2">
+              <Upload className="h-4 w-4" />
+              Use {selectedImages.size} Selected Images
+            </Button>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
