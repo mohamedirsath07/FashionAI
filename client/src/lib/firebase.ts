@@ -1,11 +1,16 @@
 /**
- * Firebase Configuration
- * Setup for Firebase Storage to manage clothing image library
+ * Firebase Configuration with Local Storage Fallback
+ * If Firebase is not configured, automatically uses browser's IndexedDB
  */
 
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
+import { 
+  uploadImageToLocal, 
+  getLocalLibraryImages, 
+  deleteImageFromLocal 
+} from './localLibrary';
 
 // Firebase configuration
 // IMPORTANT: Replace these with your actual Firebase project credentials
@@ -21,27 +26,40 @@ const firebaseConfig = {
 
 // Initialize Firebase
 let app;
-let storage: FirebaseStorage;
+let storage: FirebaseStorage | undefined;
+let useLocalStorage = false;
 
 try {
-  app = initializeApp(firebaseConfig);
-  storage = getStorage(app);
+  if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    app = initializeApp(firebaseConfig);
+    storage = getStorage(app);
+    console.log('✅ Firebase Storage initialized');
+  } else {
+    console.log('📦 Using local storage (IndexedDB) - Firebase not configured');
+    useLocalStorage = true;
+  }
 } catch (error) {
   console.error('Firebase initialization failed:', error);
-  console.warn('Using local storage fallback');
+  console.log('📦 Falling back to local storage (IndexedDB)');
+  useLocalStorage = true;
 }
 
 export { storage };
 
 /**
- * Upload an image to Firebase Storage
+ * Upload an image to storage (Firebase or Local)
  * @param file - Image file to upload
  * @param userId - User identifier (for organizing images)
  * @returns Download URL of uploaded image
  */
 export async function uploadImageToFirebase(file: File, userId: string = 'default'): Promise<string> {
+  // Use local storage if Firebase is not configured
+  if (useLocalStorage) {
+    return await uploadImageToLocal(file);
+  }
+
   if (!storage) {
-    throw new Error('Firebase Storage not initialized. Please configure Firebase credentials.');
+    throw new Error('Storage not initialized');
   }
 
   try {
@@ -55,6 +73,7 @@ export async function uploadImageToFirebase(file: File, userId: string = 'defaul
     // Get download URL
     const downloadURL = await getDownloadURL(snapshot.ref);
     
+    console.log('✅ Image uploaded to Firebase Storage');
     return downloadURL;
   } catch (error) {
     console.error('Error uploading image to Firebase:', error);
@@ -63,13 +82,18 @@ export async function uploadImageToFirebase(file: File, userId: string = 'defaul
 }
 
 /**
- * Get all images from user's library
+ * Get all images from library (Firebase or Local)
  * @param userId - User identifier
  * @returns Array of image URLs
  */
 export async function getLibraryImages(userId: string = 'default'): Promise<Array<{url: string, name: string, path: string}>> {
+  // Use local storage if Firebase is not configured
+  if (useLocalStorage) {
+    return await getLocalLibraryImages();
+  }
+
   if (!storage) {
-    throw new Error('Firebase Storage not initialized. Please configure Firebase credentials.');
+    throw new Error('Storage not initialized');
   }
 
   try {
@@ -93,17 +117,23 @@ export async function getLibraryImages(userId: string = 'default'): Promise<Arra
 }
 
 /**
- * Delete an image from Firebase Storage
+ * Delete an image from storage (Firebase or Local)
  * @param imagePath - Full path of the image in storage
  */
 export async function deleteImageFromFirebase(imagePath: string): Promise<void> {
+  // Use local storage if Firebase is not configured
+  if (useLocalStorage) {
+    return await deleteImageFromLocal(imagePath);
+  }
+
   if (!storage) {
-    throw new Error('Firebase Storage not initialized. Please configure Firebase credentials.');
+    throw new Error('Storage not initialized');
   }
 
   try {
     const imageRef = ref(storage, imagePath);
     await deleteObject(imageRef);
+    console.log('✅ Image deleted from Firebase Storage');
   } catch (error) {
     console.error('Error deleting image:', error);
     throw error;
@@ -111,9 +141,23 @@ export async function deleteImageFromFirebase(imagePath: string): Promise<void> 
 }
 
 /**
- * Check if Firebase is properly configured
- * @returns true if Firebase is configured, false otherwise
+ * Check if storage is configured and ready
+ * @returns true if storage is ready (Firebase or Local), false otherwise
  */
 export function isFirebaseConfigured(): boolean {
+  // Local storage is always available
+  if (useLocalStorage) {
+    return true;
+  }
+  
+  // Check if Firebase is properly configured
   return storage !== undefined && firebaseConfig.apiKey !== "YOUR_API_KEY";
+}
+
+/**
+ * Get storage type being used
+ * @returns "firebase" or "local"
+ */
+export function getStorageType(): 'firebase' | 'local' {
+  return useLocalStorage ? 'local' : 'firebase';
 }

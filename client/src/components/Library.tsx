@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Library as LibraryIcon, Trash2, Upload, AlertCircle, Check, X, Plus, Image as ImageIcon } from "lucide-react";
-import { getLibraryImages, deleteImageFromFirebase, isFirebaseConfigured, uploadImageToFirebase } from "@/lib/firebase";
+import { Library as LibraryIcon, Trash2, Upload, AlertCircle, Check, X, Plus, Image as ImageIcon, HardDrive, Cloud } from "lucide-react";
+import { getLibraryImages, deleteImageFromFirebase, isFirebaseConfigured, uploadImageToFirebase, getStorageType } from "@/lib/firebase";
 import type { ClothingItem } from "@shared/schema";
 
 interface LibraryProps {
@@ -21,10 +21,12 @@ export function Library({ onSelectImages, onClose }: LibraryProps) {
   const [isConfigured, setIsConfigured] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const [storageType, setStorageType] = useState<'firebase' | 'local'>('local');
 
   useEffect(() => {
     loadLibraryImages();
     setIsConfigured(isFirebaseConfigured());
+    setStorageType(getStorageType());
   }, []);
 
   const loadLibraryImages = async () => {
@@ -133,7 +135,7 @@ export function Library({ onSelectImages, onClose }: LibraryProps) {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold flex items-center gap-2">
               <LibraryIcon className="h-6 w-6" />
-              Image Library - Setup Required
+              Image Library - Error
             </h2>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-5 w-5" />
@@ -143,30 +145,10 @@ export function Library({ onSelectImages, onClose }: LibraryProps) {
           <Alert className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              <strong>Firebase Configuration Required</strong>
+              <strong>Storage Initialization Failed</strong>
               <br />
               <br />
-              To use the Image Library feature, you need to configure Firebase Storage:
-              <br />
-              <br />
-              <ol className="list-decimal ml-5 space-y-2">
-                <li>Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Firebase Console</a></li>
-                <li>Create a new project or select an existing one</li>
-                <li>Enable Storage in the Build menu</li>
-                <li>Go to Project Settings → General → Your apps</li>
-                <li>Copy your Firebase configuration</li>
-                <li>Update the values in <code className="bg-gray-100 px-1 rounded">client/src/lib/firebase.ts</code></li>
-              </ol>
-              <br />
-              Replace the placeholder values with your actual Firebase credentials:
-              <pre className="bg-gray-900 text-gray-100 p-3 rounded mt-2 text-xs overflow-auto">
-{`apiKey: "YOUR_API_KEY",
-authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-projectId: "YOUR_PROJECT_ID",
-storageBucket: "YOUR_PROJECT_ID.appspot.com",
-messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-appId: "YOUR_APP_ID"`}
-              </pre>
+              Unable to initialize storage. Please try refreshing the page or check your browser settings.
             </AlertDescription>
           </Alert>
 
@@ -181,11 +163,26 @@ appId: "YOUR_APP_ID"`}
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-6xl w-full p-6 max-h-[90vh] overflow-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <LibraryIcon className="h-6 w-6" />
-            My Clothing Library
-          </h2>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <LibraryIcon className="h-6 w-6" />
+              My Clothing Library
+            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              {storageType === 'local' ? (
+                <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                  <HardDrive className="h-3 w-3" />
+                  Local Storage
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                  <Cloud className="h-3 w-3" />
+                  Cloud Storage
+                </Badge>
+              )}
+            </div>
+          </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-5 w-5" />
           </Button>
