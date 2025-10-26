@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Library as LibraryIcon, Trash2, Upload, AlertCircle, Check, X } from "lucide-react";
-import { getLibraryImages, deleteImageFromFirebase, isFirebaseConfigured } from "@/lib/firebase";
+import { Progress } from "@/components/ui/progress";
+import { Library as LibraryIcon, Trash2, Upload, AlertCircle, Check, X, Plus, Image as ImageIcon } from "lucide-react";
+import { getLibraryImages, deleteImageFromFirebase, isFirebaseConfigured, uploadImageToFirebase } from "@/lib/firebase";
 import type { ClothingItem } from "@shared/schema";
 
 interface LibraryProps {
@@ -18,6 +19,8 @@ export function Library({ onSelectImages, onClose }: LibraryProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConfigured, setIsConfigured] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   useEffect(() => {
     loadLibraryImages();
@@ -72,6 +75,55 @@ export function Library({ onSelectImages, onClose }: LibraryProps) {
     
     onSelectImages(selectedItems);
     onClose();
+  };
+
+  const handleBulkUpload = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: files.length });
+    setError(null);
+
+    const uploadedUrls: Array<{url: string, name: string, path: string}> = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      if (!file.type.startsWith('image/')) {
+        console.warn(`Skipping non-image file: ${file.name}`);
+        continue;
+      }
+
+      try {
+        setUploadProgress({ current: i + 1, total: files.length });
+        const url = await uploadImageToFirebase(file);
+        
+        // Add to uploaded list
+        uploadedUrls.push({
+          url,
+          name: file.name,
+          path: `users/default/clothing/${Date.now()}_${file.name}`
+        });
+      } catch (err) {
+        console.error(`Failed to upload ${file.name}:`, err);
+      }
+    }
+
+    // Reload library to get all images including newly uploaded
+    await loadLibraryImages();
+    
+    setIsUploading(false);
+    setUploadProgress({ current: 0, total: 0 });
+
+    if (uploadedUrls.length > 0) {
+      // Show success message
+      const message = `Successfully uploaded ${uploadedUrls.length} image${uploadedUrls.length > 1 ? 's' : ''} to your library!`;
+      console.log(message);
+    }
+  }, []);
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleBulkUpload(e.target.files);
   };
 
   if (!isConfigured) {
@@ -145,6 +197,52 @@ appId: "YOUR_APP_ID"`}
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+
+        {/* Upload Progress Bar */}
+        {isUploading && (
+          <Card className="mb-4 p-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">Uploading images to library...</span>
+                <span className="text-muted-foreground">
+                  {uploadProgress.current} / {uploadProgress.total}
+                </span>
+              </div>
+              <Progress 
+                value={(uploadProgress.current / uploadProgress.total) * 100} 
+                className="h-2"
+              />
+            </div>
+          </Card>
+        )}
+
+        {/* Bulk Upload Button */}
+        <div className="mb-6">
+          <input
+            type="file"
+            id="library-bulk-upload"
+            className="hidden"
+            accept="image/*"
+            multiple
+            onChange={handleFileInputChange}
+            disabled={isUploading}
+          />
+          <label htmlFor="library-bulk-upload">
+            <Button 
+              className="w-full gap-2" 
+              disabled={isUploading}
+              asChild
+            >
+              <span>
+                <Plus className="h-4 w-4" />
+                {isUploading ? 'Uploading...' : 'Add Images to Library'}
+              </span>
+            </Button>
+          </label>
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            Upload multiple images at once to build your wardrobe library
+          </p>
+        </div>
 
         {isLoading ? (
           <div className="text-center py-12">
