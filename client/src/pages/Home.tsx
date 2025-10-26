@@ -149,13 +149,13 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-black">
       <Header />
 
       {currentStep === 0 && <Hero onGetStarted={handleGetStarted} />}
 
       {currentStep > 0 && (
-        <div className="container mx-auto px-4 py-12">
+        <div className="container mx-auto px-4 py-12 bg-gradient-to-br from-gray-900 via-black to-gray-900 min-h-screen">
           <ProgressIndicator currentStep={currentStep} steps={steps} />
 
           {currentStep === 1 && (

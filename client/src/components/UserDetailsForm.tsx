@@ -1,4 +1,5 @@
 import { useForm } from "react-hook-form";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { userProfileSchema, type UserProfile } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -22,10 +23,21 @@ export function UserDetailsForm({ onSubmit, defaultValues }: UserDetailsFormProp
     resolver: zodResolver(userProfileSchema),
     defaultValues: {
       name: defaultValues?.name || "",
-      age: defaultValues?.age || 25,
+      age: defaultValues?.age || undefined,
       gender: defaultValues?.gender || "other",
     },
   });
+
+  // Auto-submit when form values change
+  const watchedValues = form.watch();
+  
+  // Submit form when all required fields are filled
+  useEffect(() => {
+    const { name, age, gender } = watchedValues;
+    if (name && age && gender) {
+      onSubmit({ name, age, gender });
+    }
+  }, [watchedValues, onSubmit]);
 
   return (
     <Form {...form}>
@@ -98,15 +110,6 @@ export function UserDetailsForm({ onSubmit, defaultValues }: UserDetailsFormProp
             </FormItem>
           )}
         />
-
-        <Button 
-          type="submit" 
-          size="lg" 
-          className="w-full rounded-xl h-12"
-          data-testid="button-submit-profile"
-        >
-          Continue
-        </Button>
       </form>
     </Form>
   );
