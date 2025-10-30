@@ -1,13 +1,31 @@
-from fastapi import FastAPI, File, UploadFile, Form
+"""
+FastAPI ML Backend for Clazzy Fashion Recommendation
+Production-ready system with:
+- ResNet50 for clothing classification
+- K-means clustering for color extraction
+- Color theory for outfit harmony
+- Deep learning embeddings for style matching
+"""
+
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import random
 import uvicorn
 from typing import List
 import os
 from pathlib import Path
+import io
 
-app = FastAPI(title="Mock ML Backend for Fashion-Style")
+# Import ML modules
+from ml_classifier import get_classifier
+from color_analyzer import get_color_analyzer
+from outfit_recommender import get_outfit_recommender
+
+app = FastAPI(
+    title="Clazzy Fashion ML API",
+    version="2.0.0",
+    description="Production ML system with ResNet50, K-means, and color theory"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,8 +35,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Path to uploaded images
+# Upload directory
 UPLOAD_DIR = Path(__file__).parent.parent / "client" / "public" / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Global ML model instances (lazy loading)
+_classifier = None
+_color_analyzer = None
+_recommender = None
+
+def get_models():
+    """Initialize ML models on first request (lazy loading)"""
+    global _classifier, _color_analyzer, _recommender
+    
+    if _classifier is None:
+        print("🚀 Loading ML models (ResNet50, K-means, Color Theory)...")
+        _classifier = get_classifier()
+        _color_analyzer = get_color_analyzer()
+        _recommender = get_outfit_recommender()
+        print("✅ All ML models loaded successfully!")
+    
+    return _classifier, _color_analyzer, _recommender
+
 
 def get_uploaded_files():
     """Get all uploaded image files from the uploads directory"""
@@ -34,117 +72,173 @@ def get_uploaded_files():
                 files.append(file)
     return files
 
-def classify_by_filename(filename: str):
-    """Simple classification based on filename"""
-    lower = filename.lower()
-    if 'shirt' in lower or 'top' in lower or 'blouse' in lower or 't-shirt' in lower or 'tshirt' in lower:
-        return 'top'
-    elif 'pant' in lower or 'jean' in lower or 'trouser' in lower or 'short' in lower or 'skirt' in lower:
-        return 'bottom'
-    elif 'shoe' in lower or 'sneaker' in lower or 'boot' in lower:
-        return 'shoes'
-    elif 'dress' in lower:
-        return 'dress'
-    elif 'blazer' in lower or 'jacket' in lower or 'coat' in lower:
-        return 'blazer'
-    else:
-        # Random fallback
-        return random.choice(['top', 'bottom'])
 
-def get_color_from_filename(filename: str):
-    """Extract color hint from filename or return a default color"""
-    colors_map = {
-        'black': '#000000',
-        'white': '#FFFFFF',
-        'red': '#EF4444',
-        'blue': '#3B82F6',
-        'green': '#10B981',
-        'yellow': '#F59E0B',
-        'purple': '#8B5CF6',
-        'pink': '#EC4899',
-        'gray': '#6B7280',
-        'brown': '#92400E',
-        'navy': '#1E3A8A',
-        'beige': '#D4A574',
-        'orange': '#F97316',
+@app.get('/')
+async def root():
+    """API health check"""
+    return {
+        "status": "online",
+        "version": "2.0.0",
+        "ml_system": "ResNet50 + K-means + Color Theory"
     }
-    
-    lower = filename.lower()
-    for color_name, hex_code in colors_map.items():
-        if color_name in lower:
-            return hex_code
-    
-    # Default neutral colors
-    return random.choice(['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'])
+
 
 @app.post('/predict-type')
 async def predict_type(file: UploadFile = File(...)):
-    # Simple mock: classify based on filename
-    predicted = classify_by_filename(file.filename or "")
-    confidence = round(random.uniform(0.75, 0.98), 2)
-    return JSONResponse({"predicted_type": predicted, "confidence": confidence})
+    """
+    Predict clothing type using ResNet50 deep learning model
+    
+    Args:
+        file: Image file to classify
+    
+    Returns:
+        {
+            "predicted_type": str (top/bottom/dress/shoes/blazer/other),
+            "confidence": float (0-1),
+            "colors": List[dict] (top 5 dominant colors with K-means)
+        }
+    """
+    try:
+        # Initialize models
+        classifier, color_analyzer, _ = get_models()
+        
+        # Read file bytes
+        file_bytes = await file.read()
+        
+        # Classify using ResNet50
+        prediction = classifier.predict(file_bytes)
+        
+        # Extract colors using K-means
+        colors = color_analyzer.extract_colors(file_bytes)
+        
+        # Get dominant color
+        dominant_color = colors[0]['hex'] if colors else '#808080'
+        
+        return JSONResponse({
+            "predicted_type": prediction['predicted_type'],
+            "confidence": round(prediction['confidence'], 3),
+            "colors": colors[:5],  # Top 5 colors
+            "dominant_color": dominant_color
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in predict_type: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
+
 
 @app.post('/recommend-outfits')
 async def recommend_outfits(occasion: str = Form(...), max_items: int = Form(2)):
-    """Generate outfit recommendations from ACTUAL uploaded files"""
+    """
+    Generate intelligent outfit recommendations using:
+    - Deep learning style embeddings
+    - Color harmony theory (complementary, analogous, triadic)
+    - Occasion-based matching rules
     
-    # Get all uploaded files
-    uploaded_files = get_uploaded_files()
+    Args:
+        occasion: Event type (casual/formal/business/party/date/sports)
+        max_items: Items per outfit (default: 2)
     
-    if not uploaded_files:
-        # Fallback to empty recommendations if no files uploaded
+    Returns:
+        {
+            "occasion": str,
+            "recommendations": List[dict] with scored outfits,
+            "total_items_analyzed": int
+        }
+    """
+    try:
+        # Initialize models
+        classifier, color_analyzer, recommender = get_models()
+        
+        # Get all uploaded files
+        uploaded_files = get_uploaded_files()
+        
+        if not uploaded_files:
+            return JSONResponse({
+                "occasion": occasion,
+                "recommendations": [],
+                "total_items_analyzed": 0,
+                "message": "No images uploaded yet"
+            })
+        
+        # Analyze each uploaded file
+        analyzed_items = []
+        
+        for file_path in uploaded_files:
+            try:
+                # Read file
+                with open(file_path, 'rb') as f:
+                    file_bytes = f.read()
+                
+                # Classify with ResNet50
+                prediction = classifier.predict(file_bytes)
+                
+                # Extract colors with K-means
+                colors = color_analyzer.extract_colors(file_bytes)
+                dominant_color = colors[0]['hex'] if colors else '#808080'
+                
+                # Create item data
+                item = {
+                    'id': file_path.name,
+                    'type': prediction['predicted_type'],
+                    'colors': colors,
+                    'dominant_color': dominant_color,
+                    'features': prediction['features'],  # Deep learning embeddings
+                    'url': f'/uploads/{file_path.name}'
+                }
+                
+                analyzed_items.append(item)
+                
+            except Exception as e:
+                print(f"⚠️ Error analyzing {file_path.name}: {str(e)}")
+                continue
+        
+        if not analyzed_items:
+            return JSONResponse({
+                "occasion": occasion,
+                "recommendations": [],
+                "total_items_analyzed": 0,
+                "message": "Failed to analyze uploaded images"
+            })
+        
+        # Generate outfit recommendations using ML
+        outfits = recommender.recommend_outfits(
+            clothing_items=analyzed_items,
+            occasion=occasion,
+            max_outfits=5,
+            items_per_outfit=max_items
+        )
+        
+        # Format response
+        formatted_outfits = []
+        for outfit in outfits:
+            formatted_items = []
+            for item in outfit['items']:
+                formatted_items.append({
+                    'filename': item['id'],
+                    'type': item['type'],
+                    'category': item['type'],
+                    'color': item['dominant_color'],
+                    'url': item['url']
+                })
+            
+            formatted_outfits.append({
+                'items': formatted_items,
+                'score': round(outfit['score'], 3),
+                'total_items': outfit['total_items']
+            })
+        
         return JSONResponse({
             "occasion": occasion,
-            "recommendations": [],
-            "total_items_analyzed": 0
+            "recommendations": formatted_outfits,
+            "total_items_analyzed": len(analyzed_items)
         })
-    
-    # Classify files
-    tops = []
-    bottoms = []
-    
-    for file in uploaded_files:
-        file_type = classify_by_filename(file.name)
-        item_data = {
-            "filename": file.name,
-            "type": file_type,
-            "category": file_type,
-            "color": get_color_from_filename(file.name),
-            "url": f"/uploads/{file.name}"
-        }
         
-        if file_type == 'top':
-            tops.append(item_data)
-        elif file_type == 'bottom':
-            bottoms.append(item_data)
-    
-    # Generate outfit combinations
-    outfits = []
-    
-    # Create up to 3 outfit combinations
-    for i in range(min(3, max(len(tops), len(bottoms)))):
-        items = []
-        
-        # Pick a top (cycle through if we have any)
-        if tops:
-            items.append(tops[i % len(tops)])
-        
-        # Pick a bottom (cycle through if we have any)
-        if bottoms:
-            items.append(bottoms[i % len(bottoms)])
-        
-        if items:  # Only add outfit if we have at least one item
-            outfits.append({
-                "items": items,
-                "score": round(random.uniform(0.7, 0.95), 2),
-                "total_items": len(items)
-            })
-    
-    return JSONResponse({
-        "occasion": occasion,
-        "recommendations": outfits,
-        "total_items_analyzed": len(uploaded_files)
-    })
+    except Exception as e:
+        print(f"❌ Error in recommend_outfits: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Recommendation failed: {str(e)}")
+
 
 if __name__ == '__main__':
+    print("🚀 Starting Clazzy Fashion ML Backend...")
+    print("📊 ML Models: ResNet50 + K-means + Color Theory")
     uvicorn.run('main:app', host='0.0.0.0', port=8000, reload=True)
