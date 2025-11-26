@@ -171,7 +171,7 @@ class OutfitRecommender:
             return outfits
         
         # Generate combinations recursively
-        def generate_recursive(pattern_index: int, current_outfit: List[Dict]):
+        def generate_recursive(pattern_index: int, current_outfit: List[Dict], used_items: set):
             if pattern_index >= len(combination_pattern):
                 # Complete outfit - calculate score
                 score = self._calculate_outfit_score(current_outfit, occasion, rules)
@@ -191,17 +191,31 @@ class OutfitRecommender:
             current_type = combination_pattern[pattern_index]
             available_items = items_by_type.get(current_type, [])
             
-            # Try each item of this type
-            for item in available_items[:5]:  # Limit to top 5 per type
+            # Try each item of this type (ONLY items not already used)
+            for item in available_items[:10]:  # Limit to top 10 per type
                 if len(outfits) >= max_combinations:
                     break
                 
+                # Get unique identifier for this item
+                item_id = item.get('id') or item.get('filename') or str(item)
+                
+                # Skip if this exact item is already in the outfit
+                if item_id in used_items:
+                    continue
+                
+                # Add item to outfit
                 current_outfit.append(item)
-                generate_recursive(pattern_index + 1, current_outfit)
+                used_items.add(item_id)
+                
+                # Continue with next type
+                generate_recursive(pattern_index + 1, current_outfit, used_items)
+                
+                # Backtrack
                 current_outfit.pop()
+                used_items.remove(item_id)
         
         # Start generation
-        generate_recursive(0, [])
+        generate_recursive(0, [], set())
         
         return outfits
     
